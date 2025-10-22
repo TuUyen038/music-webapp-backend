@@ -1,6 +1,6 @@
-# 📱 Mobile Backend (`mobile_be`)
+# 📱 Music WebApp Backend
 
-A backend service for a mobile application, built with **Spring Boot**, using **MongoDB** for data storage.
+A backend service for a web application, built with **Spring Boot**, using **MongoDB** for data storage.
 
 ---
 
@@ -9,7 +9,6 @@ A backend service for a mobile application, built with **Spring Boot**, using **
 - **Framework**: Spring Boot `3.4.4`
 - **Language**: Java 17
 - **Database**: MongoDB (`mydb`)
-- **Port**: `8081`
 
 ---
 ## Run the application
