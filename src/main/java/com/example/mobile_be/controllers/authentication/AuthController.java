@@ -14,6 +14,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,6 +30,7 @@ import com.example.mobile_be.repository.PlaylistRepository;
 import com.example.mobile_be.repository.UserRepository;
 import com.example.mobile_be.security.JwtUtil;
 import com.example.mobile_be.security.UserDetailsImpl;
+import com.example.mobile_be.service.JwtBlacklistService;
 import com.example.mobile_be.service.UserService;
 
 @RestController
@@ -47,8 +49,12 @@ public class AuthController {
 
     @Autowired
     private JwtUtil jwtUtil;
+
     @Autowired
     private LibraryRepository libraryRepository;
+
+    @Autowired
+    private JwtBlacklistService jwtBlacklistService;
 
     public AuthController(PasswordEncoder passwordEncoder) {
         this.passwordEncoder = passwordEncoder;
@@ -58,7 +64,9 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
-            return ResponseEntity.badRequest().body("Email already used.");
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("message", "Email already used.");
+            return ResponseEntity.badRequest().body(errorResponse);
         }
 
         if (request.getRole() == null || request.getRole().isEmpty()) {
@@ -113,24 +121,24 @@ public class AuthController {
             }
         }
 
-        // Your Songs
-        if (!playlistRepository.existsByUserIdAndName(user.getId(), "Your Songs")) {
-            try {
-                Playlist yourSongs = new Playlist();
-                yourSongs.setName("Your Songs");
-                yourSongs.setDescription("A list of your songs");
-                yourSongs.setUserId(user.getId());
-                yourSongs.setIsPublic(false);
-                yourSongs.setThumbnailUrl("/uploads/playlists/default-img.jpg");
-                yourSongs.setPlaylistType("your_songs");
+        // // Your Songs
+        // if (!playlistRepository.existsByUserIdAndName(user.getId(), "Your Songs")) {
+        //     try {
+        //         Playlist yourSongs = new Playlist();
+        //         yourSongs.setName("Your Songs");
+        //         yourSongs.setDescription("A list of your songs");
+        //         yourSongs.setUserId(user.getId());
+        //         yourSongs.setIsPublic(false);
+        //         yourSongs.setThumbnailUrl("/uploads/playlists/default-img.jpg");
+        //         yourSongs.setPlaylistType("your_songs");
 
-                playlistRepository.save(yourSongs);
-                defaultPlaylistIds.add(yourSongs.getId());
-            } catch (Exception e) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body("Lỗi khi tạo playlist Your Songs: " + e.getMessage());
-            }
-        }
+        //         playlistRepository.save(yourSongs);
+        //         defaultPlaylistIds.add(yourSongs.getId());
+        //     } catch (Exception e) {
+        //         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        //                 .body("Lỗi khi tạo playlist Your Songs: " + e.getMessage());
+        //     }
+        // }
 
         Library library = libraryRepository.findByUserId(user.getId());
         if (library == null) {
@@ -146,6 +154,23 @@ public class AuthController {
         }
 
         libraryRepository.save(library);
+        return ResponseEntity.ok(new AuthResponse(token, user.getRole()));
+    }
+
+    @PostMapping("/verify-reset-code")
+    public ResponseEntity<?> verifyResetCode(@RequestBody VerifyRequest request) {
+        boolean success = userService.verifyEmail(request.getEmail(), request.getOtp());
+        if (!success) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid or expired OTP.");
+        }
+
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
+        }
+
+        String token = jwtUtil.generateToken(new UserDetailsImpl(user));
+
         return ResponseEntity.ok(new AuthResponse(token, user.getRole()));
     }
 
@@ -183,4 +208,19 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("INTERNAL SERVER ERROR");
         }
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestHeader("Authorization") String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest().body("Invalid token format");
+        }
+
+        String token = authHeader.substring(7);
+
+        // Thêm token vào blacklist
+        jwtBlacklistService.blacklistToken(token);
+
+        return ResponseEntity.ok("Logout successful");
+    }
 }
+

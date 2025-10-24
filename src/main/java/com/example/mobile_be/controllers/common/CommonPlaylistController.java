@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -226,6 +227,43 @@ public class CommonPlaylistController {
     return ResponseEntity.ok(orderedSongs);
   }
 
+  // lấy playlist Favourite và các bài hát trong đó
+  @GetMapping("/favourite/songs")
+  public ResponseEntity<?> getFavouriteSongs() {
+    User currentUser = getCurrentUser();
+
+    Library library = libraryRepository.findByUserId(currentUser.getId());
+    if (library == null || library.getPlaylistIds() == null || library.getPlaylistIds().isEmpty()) {
+      return ResponseEntity.ok(Collections.emptyList());
+    }
+
+    List<ObjectId> playlistObjIds = library.getPlaylistIds().stream()
+        .map(ObjectId::new)
+        .toList();
+
+    // Lấy toàn bộ playlist
+    List<Playlist> playlists = playlistRepository.findAllById(playlistObjIds);
+
+    // Tìm playlist Favourite theo tên
+    Playlist favourite = playlists.stream()
+        .filter(p -> "Favourite".equalsIgnoreCase(p.getName()))
+        .findFirst()
+        .orElse(null);
+
+    if (favourite == null || favourite.getSongs() == null || favourite.getSongs().isEmpty()) {
+      return ResponseEntity.ok(Collections.emptyList());
+    }
+
+    // Lấy danh sách bài hát giữ đúng thứ tự
+    List<ObjectId> songIds = favourite.getSongs().stream()
+        .map(ObjectId::new)
+        .toList();
+
+    List<Song> songs = songRepository.findByIdInAndIsPublicTrue(songIds);
+
+    return ResponseEntity.ok(songs);
+  }
+
   // Lấy playlist dựa vào artistId (playlist do co isPublic = true)
   @GetMapping("/artist/{artistId}")
   public ResponseEntity<?> getPlaylistByArtistId(@PathVariable String artistId) {
@@ -296,9 +334,9 @@ public class CommonPlaylistController {
   // Chỉ bao gồm thay đổi name, thumbnail, description, thu tu bai hat
   @PatchMapping("/change/{id}")
   public ResponseEntity<?> updatePlaylist(@PathVariable("id") String id,
-      @RequestPart(value="name", required = false) String name,
-      @RequestPart(value="description", required = false) String description,
-      @RequestPart(value="thumbnail", required = false) MultipartFile thumbnail,
+      @RequestPart(value = "name", required = false) String name,
+      @RequestPart(value = "description", required = false) String description,
+      @RequestPart(value = "thumbnail", required = false) MultipartFile thumbnail,
       @RequestPart(value = "songs", required = false) List<String> songs) {
     ObjectId objectId = (new ObjectId(id));
     Playlist playlist = playlistRepository.findById(objectId)

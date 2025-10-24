@@ -35,7 +35,6 @@ public class OtpService {
         public String getOtp() {
             return otp;
         }
-
         public LocalDateTime getExpiryTime() {
             return expiryTime;
         }

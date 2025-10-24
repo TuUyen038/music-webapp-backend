@@ -8,7 +8,7 @@ import lombok.Data;
 public class Otp {
     private String otp;
     private LocalDateTime expiresAt;
-
+    private String purpose;
     public Otp(String otp, LocalDateTime ex) {
         this.otp = otp;
         expiresAt = ex;
