@@ -9,5 +9,4 @@ public class RegisterRequest {
     private String fullName;
     private String role; // "ROLE_USER" or "ROLE_ADMIN" or "ROLE_ARTIST"
 
-    
 }

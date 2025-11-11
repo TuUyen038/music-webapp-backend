@@ -2,6 +2,8 @@ package com.example.mobile_be.controllers.authentication;
 
 import com.example.mobile_be.dto.ForgotPasswordRequest;
 import com.example.mobile_be.dto.ResetPasswordRequest;
+import com.example.mobile_be.models.User;
+import com.example.mobile_be.repository.UserRepository;
 import com.example.mobile_be.service.UserService;
 
 import java.util.HashMap;
@@ -18,6 +20,8 @@ public class PasswordResetController {
 
     @Autowired
     private UserService userService;
+    @Autowired
+    private UserRepository userRepository;
 
     @PostMapping("/forgot")
     public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {

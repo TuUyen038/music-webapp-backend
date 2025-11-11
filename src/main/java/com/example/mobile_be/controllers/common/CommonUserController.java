@@ -49,7 +49,7 @@ public class CommonUserController {
         User currentUser = getCurrentUser();
 
         String currentRole = currentUser.getRole();
-        
+
         if (currentRole.equals("ROLE_USER")) {
             currentUser.setRole("ROLE_ARTIST");
         } else if (currentRole.equals("ROLE_ARTIST")) {
@@ -58,7 +58,7 @@ public class CommonUserController {
             return ResponseEntity.badRequest().body("Unsupported role: " + currentRole);
         }
 
-        userRepository.save(currentUser); 
+        userRepository.save(currentUser);
         return ResponseEntity.ok("User role updated to: " + currentUser.getRole());
     }
 
@@ -102,6 +102,22 @@ public class CommonUserController {
         }
 
         return ResponseEntity.ok(userDetails.getUser());
+    }
+
+    // get user by id ()
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getArtistById(@PathVariable("id") String id) {
+        try {
+            ObjectId objId = new ObjectId(id);
+            Optional<User> user = userRepository.findById(objId);
+
+            return user.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Đã có lỗi: " + e.getMessage());
+        }
     }
 
     // [PATCH] http://localhost:8081/api/common/users/me/change

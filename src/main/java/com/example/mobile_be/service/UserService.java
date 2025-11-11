@@ -1,6 +1,6 @@
 package com.example.mobile_be.service;
 
-import java.util.List;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -38,51 +38,55 @@ public class UserService implements UserDetailsService {
         return new UserDetailsImpl(user);
     }
 
-    public String getLastName(String fullName) {
-        if (fullName == null || fullName.trim().isEmpty()) {
+    private String getLastName(String fullName) {
+        if (fullName == null || fullName.trim().isEmpty())
             return "";
-        }
         String[] parts = fullName.trim().split("\\s+");
         return parts[parts.length - 1];
     }
 
-    // Gửi OTP và lưu tạm thông tin đăng ký
+    // Gửi OTP đăng ký
     public void sendRegisterOtp(RegisterRequest request) {
-        String otp = otpService.generateAndStorePendingUser(request);
+        String otp = otpService.generateAndStorePendingUser(
+                request.getEmail(),
+                request.getFullName(),
+                OtpType.REGISTER);
 
         String subject = "Mã OTP xác thực tài khoản";
         String content = "Xin chào " + request.getFullName()
-                + ",\n\nMã OTP của bạn là: " + otp + "\nMã OTP có hiệu lực trong 5 phút.";
+                + ",\nMã OTP của bạn là: " + otp
+                + "\nCó hiệu lực trong 5 phút.";
 
         emailService.sendEmail(request.getEmail(), subject, content);
     }
 
-    // Xác minh OTP và tạo tài khoản thực
+    // Xác minh OTP đăng ký
     public boolean verifyEmail(String email, String otp) {
+        // Check OTP validity
         boolean isValid = otpService.isValidOtp(email, otp);
         if (!isValid)
             return false;
 
-        OtpService.PendingUser pending = otpService.getPendingUsers().remove(email);
-        if (pending == null)
+        // Get the pending OTP info
+        OtpService.PendingUser pending = otpService.getPendingUsers().get(email);
+        if (pending == null || pending.getType() != OtpType.REGISTER)
             return false;
 
-        RegisterRequest request = pending.getRequest();
+        // Remove from pending list after verification
+        otpService.getPendingUsers().remove(email);
 
-        User user = new User();
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setFullName(request.getFullName());
-        user.setLastName(getLastName(request.getFullName()));
-        user.setRole(request.getRole());
-        user.setIsVerified(true);
-       // user.setIsVerifiedArtist(false);
+        // Find the existing user created at registration
+        Optional<User> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isEmpty())
+            return false;
+
+        User user = optionalUser.get();
+        user.setIsVerified(true); // Only update verification flag
 
         userRepository.save(user);
         return true;
     }
 
-    // Đăng nhập
     public User authenticate(String email, String rawPassword) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found in login"));
@@ -95,18 +99,22 @@ public class UserService implements UserDetailsService {
         return user;
     }
 
-    // Gửi mail reset password
+    // Gửi OTP reset password
     public boolean requestPasswordReset(String email) {
         User user = userRepository.findByEmail(email).orElse(null);
-        if (user == null)
+        if (user == null || !user.getIsVerified())
             return false;
 
-        String otp = otpService.generateOtp(email);
+        String otp = otpService.generateAndStorePendingUser(
+                email,
+                null,
+                OtpType.FORGOT_PASSWORD);
+
         emailService.sendPasswordResetOTP(email, otp);
         return true;
     }
 
-    // Đặt lại mật khẩu bằng OTP
+    // Reset password với OTP
     public boolean resetPasswordWithOtp(ResetPasswordRequest request) {
         boolean isValid = otpService.isValidOtp(request.getEmail(), request.getOtp());
         if (!isValid)
@@ -121,21 +129,44 @@ public class UserService implements UserDetailsService {
         return true;
     }
 
-    // Gửi lại OTP đăng ký (chưa xác thực)
-    public boolean resendOtp(String email) {
-        OtpService.PendingUser pending = otpService.getPendingUsers().get(email);
-        if (pending == null)
+    // Gửi lại OTP
+    public boolean resendOtp(String email, OtpType type) {
+        Optional<User> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isEmpty())
             return false;
 
-        String newOtp = otpService.generateAndStorePendingUser(pending.getRequest());
+        User user = optionalUser.get();
 
-        String subject = "Mã OTP mới xác thực tài khoản";
-        String content = "Xin chào " + pending.getRequest().getFullName()
-                + ",\n\nMã OTP mới của bạn là: " + newOtp + "\nMã OTP có hiệu lực trong 5 phút.";
+        if (type == OtpType.REGISTER && user.getIsVerified())
+            return false;
+        if (type == OtpType.FORGOT_PASSWORD && !user.getIsVerified())
+            return false;
+
+        String fullName = (type == OtpType.REGISTER) ? user.getFullName() : null;
+        String newOtp = otpService.generateAndStorePendingUser(email, fullName, type);
+
+        String subject = (type == OtpType.REGISTER) ? "OTP xác thực tài khoản" : "OTP đặt lại mật khẩu";
+        String content = "Xin chào " + (fullName != null ? fullName : "")
+                + ",\nMã OTP của bạn là: " + newOtp
+                + "\nCó hiệu lực trong 5 phút.";
 
         emailService.sendEmail(email, subject, content);
         return true;
     }
 
-    
+    public boolean verifyForgotPasswordOtp(String email, String otp) {
+        boolean isValid = otpService.isValidOtp(email, otp);
+        if (!isValid)
+            return false;
+
+        OtpService.PendingUser pending = otpService.getPendingUsers().get(email);
+        if (pending == null || pending.getType() != OtpType.FORGOT_PASSWORD)
+            return false;
+
+        // Sau khi xác minh xong, xóa pending
+        otpService.getPendingUsers().remove(email);
+
+        return true; // cho FE biết OTP hợp lệ, tiếp tục reset password
+    }
+
 }

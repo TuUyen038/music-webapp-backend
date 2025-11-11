@@ -31,6 +31,7 @@ import com.example.mobile_be.repository.UserRepository;
 import com.example.mobile_be.security.JwtUtil;
 import com.example.mobile_be.security.UserDetailsImpl;
 import com.example.mobile_be.service.JwtBlacklistService;
+import com.example.mobile_be.service.OtpType;
 import com.example.mobile_be.service.UserService;
 
 @RestController
@@ -40,19 +41,14 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     @Autowired
     PlaylistRepository playlistRepository;
-
     @Autowired
     private UserRepository userRepository;
-
     @Autowired
     private UserService userService;
-
     @Autowired
     private JwtUtil jwtUtil;
-
     @Autowired
     private LibraryRepository libraryRepository;
-
     @Autowired
     private JwtBlacklistService jwtBlacklistService;
 
@@ -73,9 +69,14 @@ public class AuthController {
             request.setRole("ROLE_USER");
         }
 
-        if (request.getRole() != null && request.getRole().equals("ROLE_ADMIN")) {
-            request.setRole("ROLE_USER");
-        }
+        User user = new User();
+        user.setEmail(request.getEmail());
+        user.setFullName(request.getFullName());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRole(request.getRole());
+        user.setIsVerified(false);
+
+        userRepository.save(user);
 
         userService.sendRegisterOtp(request);
 
@@ -89,12 +90,12 @@ public class AuthController {
     public ResponseEntity<?> verifyEmail(@RequestBody VerifyRequest request) {
         boolean success = userService.verifyEmail(request.getEmail(), request.getOtp());
         if (!success) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid or expired OTP.");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Invalid or expired OTP."));
         }
 
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
         if (user == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found."));
         }
 
         String token = jwtUtil.generateToken(new UserDetailsImpl(user));
@@ -123,21 +124,21 @@ public class AuthController {
 
         // // Your Songs
         // if (!playlistRepository.existsByUserIdAndName(user.getId(), "Your Songs")) {
-        //     try {
-        //         Playlist yourSongs = new Playlist();
-        //         yourSongs.setName("Your Songs");
-        //         yourSongs.setDescription("A list of your songs");
-        //         yourSongs.setUserId(user.getId());
-        //         yourSongs.setIsPublic(false);
-        //         yourSongs.setThumbnailUrl("/uploads/playlists/default-img.jpg");
-        //         yourSongs.setPlaylistType("your_songs");
+        // try {
+        // Playlist yourSongs = new Playlist();
+        // yourSongs.setName("Your Songs");
+        // yourSongs.setDescription("A list of your songs");
+        // yourSongs.setUserId(user.getId());
+        // yourSongs.setIsPublic(false);
+        // yourSongs.setThumbnailUrl("/uploads/playlists/default-img.jpg");
+        // yourSongs.setPlaylistType("your_songs");
 
-        //         playlistRepository.save(yourSongs);
-        //         defaultPlaylistIds.add(yourSongs.getId());
-        //     } catch (Exception e) {
-        //         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-        //                 .body("Lỗi khi tạo playlist Your Songs: " + e.getMessage());
-        //     }
+        // playlistRepository.save(yourSongs);
+        // defaultPlaylistIds.add(yourSongs.getId());
+        // } catch (Exception e) {
+        // return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        // .body("Lỗi khi tạo playlist Your Songs: " + e.getMessage());
+        // }
         // }
 
         Library library = libraryRepository.findByUserId(user.getId());
@@ -161,7 +162,7 @@ public class AuthController {
     public ResponseEntity<?> verifyResetCode(@RequestBody VerifyRequest request) {
         boolean success = userService.verifyEmail(request.getEmail(), request.getOtp());
         if (!success) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid or expired OTP.");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Invalid or expired OTP."));
         }
 
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
@@ -174,16 +175,45 @@ public class AuthController {
         return ResponseEntity.ok(new AuthResponse(token, user.getRole()));
     }
 
+    @PostMapping("/verify-otp")
+    public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        String otp = body.get("otp");
+
+        boolean isValid = userService.verifyForgotPasswordOtp(email, otp);
+        if (!isValid) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "OTP is invalid or has expired"));
+        }
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "OTP hợp lệ, bạn có thể đặt lại mật khẩu");
+        return ResponseEntity.ok(response);
+    }
+
     // [POST] /api/resend-otp - Gửi lại OTP
     @PostMapping("/resend-otp")
-    public ResponseEntity<String> resendOtp(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> resendOtp(@RequestBody Map<String, String> body) {
         String email = body.get("email");
-        boolean success = userService.resendOtp(email);
+        String typeStr = body.get("type"); // "REGISTER" hoặc "FORGOT_PASSWORD"
+        if (typeStr == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Missing OTP type"));
+        }
+
+        OtpType type;
+        try {
+            type = OtpType.valueOf(typeStr);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid OTP type"));
+        }
+
+        boolean success = userService.resendOtp(email, type);
 
         if (success) {
-            return ResponseEntity.ok("A new OTP has been sent to your email.");
+            return ResponseEntity.ok(Map.of("message", "A new OTP has been sent to your email."));
         } else {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found or already verified.");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "User not found or invalid state for OTP resend."));
         }
     }
 
@@ -191,21 +221,28 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
+            if (request.getEmail() == null || request.getPassword() == null) {
+    return ResponseEntity.badRequest().body(Map.of("message", "Email and password are required"));
+}
+
             User user = userService.authenticate(request.getEmail(), request.getPassword());
             String token = jwtUtil.generateToken(new UserDetailsImpl(user));
             return ResponseEntity.ok(new AuthResponse(token, user.getRole()));
         } catch (UsernameNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found"));
         } catch (BadCredentialsException e) {
             if ("Wrong password".equals(e.getMessage())) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Wrong password.");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Wrong password"));
             }
             if ("Unverified".equals(e.getMessage())) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unverified.");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unverified account"));
             }
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Incorrect login information.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Incorrect login information"));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("INTERNAL SERVER ERROR");
+            e.printStackTrace(); 
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "INTERNAL SERVER ERROR"));
         }
     }
 
@@ -223,4 +260,3 @@ public class AuthController {
         return ResponseEntity.ok("Logout successful");
     }
 }
-
