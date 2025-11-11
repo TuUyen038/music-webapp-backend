@@ -134,7 +134,8 @@ public class CommonUserController {
     public ResponseEntity<?> patchUser(
             @AuthenticationPrincipal UserDetailsImpl userDetails,
             @RequestPart(value = "fullName", required = false) String fullName,
-            @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
+            @RequestPart(value = "avatar", required = false) MultipartFile avatar,
+            @RequestPart(value = "bio", required = false) String bio) {
         if (userDetails == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         }
@@ -159,7 +160,9 @@ public class CommonUserController {
 
         if (fullName != null) {
             existingUser.setFullName(fullName);
-            existingUser.setLastName(getLastName(fullName));
+        }
+        if (bio != null) {
+            existingUser.setBio(bio);
         }
 
         User updatedUser = userRepository.save(existingUser);
