@@ -34,11 +34,11 @@ public class PasswordResetController {
 
     @PostMapping("/reset")
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
-        boolean success = userService.resetPasswordWithOtp(request);
+        boolean success = userService.resetPassword(request);
         if (success) {
             return ResponseEntity.ok(Map.of("message", "Your password has been reset successfully."));
         } else {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Invalid or expired token."));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "User not found."));
         }
     }
 }

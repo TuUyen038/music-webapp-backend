@@ -114,12 +114,7 @@ public class UserService implements UserDetailsService {
         return true;
     }
 
-    // Reset password với OTP
-    public boolean resetPasswordWithOtp(ResetPasswordRequest request) {
-        boolean isValid = otpService.isValidOtp(request.getEmail(), request.getOtp());
-        if (!isValid)
-            return false;
-
+    public boolean resetPassword(ResetPasswordRequest request) {
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
         if (user == null)
             return false;
