@@ -15,6 +15,7 @@ public class UserResponse{
     private String fullName;
     private String role;
     private String avatarUrl;
+    private String bio;
    // private Boolean isVerifiedArtist;
    // private Boolean isVerified;
 }
