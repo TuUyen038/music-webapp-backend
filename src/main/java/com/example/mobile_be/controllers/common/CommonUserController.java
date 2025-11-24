@@ -104,6 +104,22 @@ public class CommonUserController {
         return ResponseEntity.ok(userDetails.getUser());
     }
 
+    // get user by id ()
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getArtistById(@PathVariable("id") String id) {
+        try {
+            ObjectId objId = new ObjectId(id);
+            Optional<User> user = userRepository.findById(objId);
+
+            return user.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Đã có lỗi: " + e.getMessage());
+        }
+    }
+
     // [PATCH] http://localhost:8081/api/common/users/me/change
     // người dùng tự chỉnh sửa thông tin cá nhân
     public String getLastName(String fullName) {
@@ -147,16 +163,10 @@ public class CommonUserController {
             existingUser.setLastName(getLastName(fullName));
         }
 
-   // ✅ Giới hạn bio tối đa 14 chữ
     if (bio != null) {
-        String[] words = bio.trim().split("\\s+");
-        if (words.length > 14) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Bio must not exceed 14 words.");
+            existingUser.setBio(bio);
         }
-        existingUser.setBio(bio);
-    }
-
+        
         User updatedUser = userRepository.save(existingUser);
         return ResponseEntity.ok(updatedUser);
     }
