@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/common/users")
+@CrossOrigin(origins = "http://localhost:5173")
 
 public class CommonUserController {
 
@@ -43,7 +44,6 @@ public class CommonUserController {
     private ImageStorageService imageStorageService;
     @Autowired
     SongRepository songRepository;
-
     @PatchMapping("/switch-role")
     public ResponseEntity<?> toggleUserRole() {
         User currentUser = getCurrentUser();

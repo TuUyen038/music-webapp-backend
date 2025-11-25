@@ -5,7 +5,6 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -19,26 +18,29 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
-
 public class SecurityConfig {
+
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
-                .cors(Customizer.withDefaults())
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/login", "/api/register",
-                        "/api/verify-email","/api/verify-otp","/api/resend-otp", "/api/password/**",
-                        "/api/artist/song/**", "/error", "/uploads/**").permitAll()
-                        .requestMatchers("/api/common/song/stream/**").permitAll()  
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/artist/**").hasAnyRole("ARTIST", "ADMIN")
-                        .requestMatchers("/api/common/**").hasAnyRole("USER", "ADMIN", "ARTIST")
-                        .anyRequest().authenticated())
-                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))   // ⭐ Quan trọng
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(
+                        "/api/login", "/api/register", "/api/verify-email", "/api/verify-otp", 
+                        "/api/resend-otp", "/api/password/**",
+                        "/api/artist/song/**", "/error", "/uploads/**"
+                ).permitAll()
+                .requestMatchers("/api/common/song/stream/**").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers("/api/artist/**").hasAnyRole("ARTIST", "ADMIN")
+                .requestMatchers("/api/common/**").hasAnyRole("USER", "ADMIN", "ARTIST")
+                .anyRequest().authenticated()
+            )
+            .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
@@ -47,11 +49,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST","PATCH", "PUT", "DELETE", "OPTIONS"));
+        
+        config.addAllowedOriginPattern("*");  // ⭐ CHO PHÉP MỌI ORIGIN
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(false);
-
+        config.setAllowCredentials(true);      // ⭐ DÙNG TOKEN, COOKIE OK
+        config.setAllowedOrigins(List.of("http://localhost:5173"));  
+        
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
