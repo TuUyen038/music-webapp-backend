@@ -135,7 +135,7 @@ public class CommonUserController {
             @AuthenticationPrincipal UserDetailsImpl userDetails,
             @RequestPart(value = "fullName", required = false) String fullName,
             @RequestPart(value = "avatar", required = false) MultipartFile avatar,
-            @RequestPart(value = "bio", required = false) String bio) {
+            @RequestPart(value = "bio", required = false) String bio) { // 🟢 thêm dòng này
         if (userDetails == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         }
@@ -160,8 +160,16 @@ public class CommonUserController {
 
         if (fullName != null) {
             existingUser.setFullName(fullName);
+            existingUser.setLastName(getLastName(fullName));
         }
+
+        // ✅ Giới hạn bio tối đa 14 chữ
         if (bio != null) {
+            String[] words = bio.trim().split("\\s+");
+            if (words.length > 14) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Bio must not exceed 14 words.");
+            }
             existingUser.setBio(bio);
         }
 

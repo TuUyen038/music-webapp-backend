@@ -107,7 +107,10 @@ public class SongController {
             song.setCoverImageUrl(url);
          }
          songService.saveSongFile(song, file);
+         if(lyrics != null && !lyrics.isEmpty()) {
          songService.saveSongFile(song, lyrics);
+
+         }
 
          return ResponseEntity.ok("Song added successfully.");
       } catch (Exception e) {
