@@ -34,6 +34,14 @@ public class SongService {
         return songRepository.findById(id);
     }
 
+    public List<Song> findByArtistOrGenre(Set<String> artistIds, Set<String> genreIds) {
+        return songRepository.findByArtistIdInOrGenreIdIn(artistIds, genreIds);
+    }
+
+    public List<Song> getRandomSongs(int limit) {
+        return songRepository.findRandom(limit);
+    }
+
     public List<Song> searchSongsByTitle(String title) {
         return songRepository.findByTitleContainingIgnoreCase(title);
     }
