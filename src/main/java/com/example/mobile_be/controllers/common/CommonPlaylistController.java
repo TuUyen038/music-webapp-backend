@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.mobile_be.dto.AddSongsRequest;
 import com.example.mobile_be.dto.PlaylistRequest;
@@ -69,35 +71,27 @@ public class CommonPlaylistController {
   private MongoTemplate mongoTemplate;
 
   private User getCurrentUser() {
-    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-    UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-    return userRepository.findById(userDetails.getId())
-        .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    if (auth == null || !auth.isAuthenticated() || !(auth.getPrincipal() instanceof UserDetailsImpl)) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+    }
+
+    UserDetailsImpl u = (UserDetailsImpl) auth.getPrincipal();
+
+    return userRepository.findById(u.getId())
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
   }
-  
 
   @GetMapping("/favorite/songs/{songId}/exists")
   public ResponseEntity<?> checkSongInFavorite(@PathVariable("songId") String songId) {
     User currentUser = getCurrentUser();
     String userId = currentUser.getId();
 
-    // Playlist targetPlaylist;
-
-    // if (playlistId != null && !playlistId.trim().isEmpty()) {
-    //   // TH1: Người dùng chỉ định playlist
-    //   targetPlaylist = playlistRepository.findById(new ObjectId(playlistId))
-    //       .orElseThrow(() -> new RuntimeException("Playlist not found"));
-    //   if (!targetPlaylist.getUserId().equals(userId)) {
-    //     return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied");
-    //   }
-    // }
     boolean isFavorite = playlistRepository.existsByUserIdAndNameAndSongsContaining(userId, "Favorites", songId);
-
 
     return ResponseEntity.ok(Map.of(
         "songId", songId,
-        "inFavorite", isFavorite
-    ));
+        "inFavorite", isFavorite));
   }
 
   // getNewReleasePlaylists
@@ -271,7 +265,7 @@ public class CommonPlaylistController {
 
     // Tìm playlist Favourite theo tên
     Playlist favourite = playlists.stream()
-        .filter(p -> "Favourite".equalsIgnoreCase(p.getName()))
+        .filter(p -> "favourites".equalsIgnoreCase(p.getPlaylistType()))
         .findFirst()
         .orElse(null);
 
@@ -315,24 +309,21 @@ public class CommonPlaylistController {
   // [POST] http://localhost:8081/api/common/playlist/create
   // tạo playlist
   @PostMapping("/create")
-  public ResponseEntity<?> postPlaylist(@ModelAttribute PlaylistRequest request) {
-    // Lấy user đang đăng nhập từ SecurityContext
+  public ResponseEntity<?> postPlaylist(@RequestBody PlaylistRequest request) {
     try {
-
       User user = getCurrentUser();
-
       Playlist playlist = new Playlist();
       playlist.setName(request.getName());
       playlist.setDescription(request.getDescription());
       playlist.setUserId(user.getId());
       playlist.setIsPublic(false);
 
-      MultipartFile thumbnail = request.getThumbnail();
+      String thumbnail = request.getThumbnail();
 
       if (thumbnail != null && !thumbnail.isEmpty()) {
-        String url = imageStorageService.saveFile(thumbnail, "images");
-        playlist.setThumbnailUrl(url);
-
+        playlist.setThumbnailUrl(thumbnail);
+      } else {
+        playlist.setThumbnailUrl("https://res.cloudinary.com/denhj5ubh/image/upload/v1765705079/playlist_uwjlfz.png");
       }
 
       playlistRepository.save(playlist);
@@ -349,66 +340,96 @@ public class CommonPlaylistController {
       library.getPlaylistIds().add(playlistId);
 
       libraryRepository.save(library);
-      return ResponseEntity.status(200).body("Playlist created successfully.");
+      return ResponseEntity.status(201).body("Playlist created successfully.");
     } catch (Exception e) {
-      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Loi o tao playlist: " + e.getMessage());
+      return ResponseEntity
+          .status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(java.util.Map.of("message", "Error in playlist: " + e.getMessage()));
     }
   }
 
   // [PATCH] http://localhost:8081/api/common/playlist/change/{playlistId}
-  // Chỉ bao gồm thay đổi name, thumbnail, description, thu tu bai hat
+  // Chỉ bao gồm thay đổi name, thumbnail, description, danh sach bai hat
   @PatchMapping("/change/{id}")
-  public ResponseEntity<?> updatePlaylist(@PathVariable("id") String id,
-      @RequestPart(value = "name", required = false) String name,
-      @RequestPart(value = "description", required = false) String description,
-      @RequestPart(value = "thumbnail", required = false) MultipartFile thumbnail,
-      @RequestPart(value = "songs", required = false) List<String> songs) {
-    ObjectId objectId = (new ObjectId(id));
-    Playlist playlist = playlistRepository.findById(objectId)
-        .orElseThrow(() -> new RuntimeException("Playlist not found"));
+  public ResponseEntity<?> updatePlaylist(
+      @PathVariable("id") String id,
+      @RequestBody PlaylistRequest request) {
+    try {
+      User user = getCurrentUser();
 
-    if (!playlist.getUserId().equals(getCurrentUser().getId())) {
-      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied");
-    }
-
-    if (name != null && !name.trim().isEmpty()) {
-      playlist.setName(name);
-    }
-    if (description != null && !description.trim().isEmpty()) {
-      playlist.setDescription(description);
-    }
-    if (songs != null) {
-      playlist.setSongs(songs);
-    }
-    if (thumbnail != null && !thumbnail.isEmpty()) {
-      try {
-        String url = imageStorageService.saveFile(thumbnail, "images");
-        playlist.setThumbnailUrl(url);
-      } catch (IOException e) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body("Upload thumbnail failed: " + e.getMessage());
+      // validate id
+      if (!ObjectId.isValid(id)) {
+        return ResponseEntity.badRequest()
+            .body(java.util.Map.of("message", "Invalid playlist id"));
       }
+
+      ObjectId objectId = new ObjectId(id);
+
+      Playlist playlist = playlistRepository.findById(objectId)
+          .orElseThrow(() -> new RuntimeException("Playlist not found"));
+
+      // ownership check
+      if (!playlist.getUserId().equals(user.getId())) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(java.util.Map.of("message", "Access denied"));
+      }
+
+      String name = request.getName();
+      String description = request.getDescription();
+      String thumbnail = request.getThumbnail();
+      Boolean isPublic = request.getIsPublic();
+      if (name != null && !name.trim().isEmpty()) {
+        playlist.setName(name.trim());
+      }
+      if (description != null) {
+        playlist.setDescription(description.trim());
+      }
+      if (thumbnail != null && !thumbnail.trim().isEmpty()) {
+        playlist.setThumbnailUrl(thumbnail.trim());
+      }
+      if (isPublic != null) {
+        playlist.setIsPublic(isPublic);
+      }
+      List<String> songs = request.getSongs();
+      if (songs != null) {
+        List<String> cleaned = songs.stream()
+            .filter(s -> s != null && !s.trim().isEmpty())
+            .map(String::trim)
+            .toList();
+
+        // validate ObjectId format
+        for (String sid : cleaned) {
+          if (!ObjectId.isValid(sid)) {
+            return ResponseEntity.badRequest()
+                .body(java.util.Map.of("message", "Invalid song id in songs: " + sid));
+          }
+        }
+
+        // optional: reject duplicates
+        List<String> unique = new ArrayList<>(new LinkedHashSet<>(cleaned));
+        if (unique.size() != cleaned.size()) {
+          return ResponseEntity.badRequest()
+              .body(java.util.Map.of("message", "Songs contains duplicates"));
+        }
+
+        playlist.setSongs(new ArrayList<>(unique)); // giữ đúng thứ tự
+      }
+
+      playlistRepository.save(playlist);
+
+      return ResponseEntity.ok(playlist);
+
+    } catch (RuntimeException e) {
+      if ("Playlist not found".equals(e.getMessage())) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(java.util.Map.of("message", e.getMessage()));
+      }
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(java.util.Map.of("message", e.getMessage()));
+    } catch (Exception e) {
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(java.util.Map.of("message", "Error updating playlist: " + e.getMessage()));
     }
-
-    // updates.forEach((key, value) -> {
-    // if (allowedFields.contains(key)) {
-    // Field field = ReflectionUtils.findField(Playlist.class, key);
-    // if (field != null) {
-    // field.setAccessible(true);
-    // ReflectionUtils.setField(field, playlist, value);
-    // }
-    // }
-    // });
-
-    // // Xử lý thay đổi thứ tự bài hát
-    // if (updates.containsKey("songs")) {
-    // try {
-    // @SuppressWarnings("unchecked")
-    // List<String> newOrder = (List<String>) updates.get("songs");
-
-    playlistRepository.save(playlist);
-    return ResponseEntity.ok(playlist);
-
   }
 
   // [PATCH] http://localhost:8081/api/common/playlist/addSong
@@ -428,16 +449,14 @@ public class CommonPlaylistController {
     Playlist targetPlaylist;
 
     if (playlistId != null && !playlistId.trim().isEmpty()) {
-      // TH1: Người dùng chỉ định playlist
       targetPlaylist = playlistRepository.findById(new ObjectId(playlistId))
           .orElseThrow(() -> new RuntimeException("Playlist not found"));
       if (!targetPlaylist.getUserId().equals(userId)) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied");
       }
     } else {
-      // TH2: Không có playlistId → dùng "Favorites"
       System.out.println(userId);
-      Optional<Playlist> optional = playlistRepository.findByUserIdAndName(userId, "Favorites");
+      Optional<Playlist> optional = playlistRepository.findByUserIdAndPlaylistType(userId, "favorites");
       if (optional.isPresent()) {
         targetPlaylist = optional.get();
       } else {
@@ -445,7 +464,9 @@ public class CommonPlaylistController {
         targetPlaylist.setName("Favorites");
         targetPlaylist.setUserId(userId);
         targetPlaylist.setIsPublic(false);
-        targetPlaylist.setThumbnailUrl("/uploads/images/default-img.jpg");
+        targetPlaylist.setPlaylistType("favorites");
+        targetPlaylist
+            .setThumbnailUrl("https://res.cloudinary.com/denhj5ubh/image/upload/v1765705079/playlist_uwjlfz.png");
         targetPlaylist.setDescription("A list of your favorite songs");
         targetPlaylist.setSongs(new ArrayList<>());
 
@@ -469,28 +490,131 @@ public class CommonPlaylistController {
   public ResponseEntity<?> removeSongsFromPlaylist(
       @PathVariable("playlistId") String playlistId,
       @RequestBody Map<String, List<String>> body) {
+    try {
+      // 1) validate playlistId
+      if (!ObjectId.isValid(playlistId)) {
+        return ResponseEntity.badRequest()
+            .body(java.util.Map.of("message", "Invalid playlistId"));
+      }
 
-    ObjectId playlistObjId = new ObjectId(playlistId);
-    Playlist playlist = playlistRepository.findById(playlistObjId)
-        .orElseThrow(() -> new RuntimeException("Playlist not found"));
+      ObjectId playlistObjId = new ObjectId(playlistId);
 
-    if (!playlist.getUserId().equals(getCurrentUser().getId())) {
-      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied");
+      Playlist playlist = playlistRepository.findById(playlistObjId)
+          .orElseThrow(() -> new RuntimeException("Playlist not found"));
+
+      String userId = getCurrentUser().getId();
+
+      // 2) ownership
+      if (!userId.equals(playlist.getUserId())) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(java.util.Map.of("message", "Access denied"));
+      }
+
+      // 3) request songs
+      List<String> songsToRemove = body.get("songs");
+      if (songsToRemove == null || songsToRemove.isEmpty()) {
+        return ResponseEntity.badRequest()
+            .body(java.util.Map.of("message", "Missing songs"));
+      }
+
+      // 4) clean + detect duplicates + validate format
+      List<String> cleaned = new java.util.ArrayList<>();
+      java.util.Set<String> seen = new java.util.HashSet<>();
+      java.util.Set<String> duplicates = new java.util.LinkedHashSet<>();
+      java.util.Set<String> invalidIds = new java.util.LinkedHashSet<>();
+
+      for (String sid : songsToRemove) {
+        if (sid == null || sid.trim().isEmpty())
+          continue;
+        String s = sid.trim();
+
+        if (!seen.add(s))
+          duplicates.add(s);
+        cleaned.add(s);
+
+        if (!ObjectId.isValid(s))
+          invalidIds.add(s);
+      }
+
+      if (!invalidIds.isEmpty()) {
+        return ResponseEntity.badRequest().body(java.util.Map.of(
+            "message", "Invalid songId(s)",
+            "invalidSongIds", invalidIds));
+      }
+
+      // 5) check song existence (you asked "song not found")
+      // NOTE: this is N queries if you do existsById in a loop; better do a single
+      // query.
+      java.util.Set<String> uniqueIds = new java.util.LinkedHashSet<>(cleaned);
+
+      // Convert to ObjectId list
+      List<ObjectId> oidList = uniqueIds.stream().map(ObjectId::new).toList();
+
+      // Fetch existing songs by _id
+      // Assumes you have SongRepository extends MongoRepository<Song, ObjectId>
+      List<Song> existingSongs = songRepository.findAllById(oidList);
+      java.util.Set<String> existingIds = existingSongs.stream()
+          .map(s -> s.getId()) // your Song.getId() returns hex string
+          .collect(java.util.stream.Collectors.toSet());
+
+      java.util.Set<String> notFoundSongIds = new java.util.LinkedHashSet<>();
+      for (String sid : uniqueIds) {
+        if (!existingIds.contains(sid))
+          notFoundSongIds.add(sid);
+      }
+
+      if (!notFoundSongIds.isEmpty()) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(java.util.Map.of(
+            "message", "Some songs not found",
+            "notFoundSongIds", notFoundSongIds));
+      }
+
+      // 6) remove only those present in playlist
+      if (playlist.getSongs() == null)
+        playlist.setSongs(new java.util.ArrayList<>());
+
+      java.util.Set<String> playlistSet = new java.util.HashSet<>(playlist.getSongs());
+
+      java.util.Set<String> notInPlaylist = new java.util.LinkedHashSet<>();
+      java.util.Set<String> removedIds = new java.util.LinkedHashSet<>();
+
+      for (String sid : uniqueIds) {
+        if (!playlistSet.contains(sid)) {
+          notInPlaylist.add(sid);
+        } else {
+          removedIds.add(sid);
+        }
+      }
+
+      boolean changed = playlist.getSongs().removeIf(removedIds::contains);
+      if (changed)
+        playlistRepository.save(playlist);
+
+      return ResponseEntity.ok(java.util.Map.of(
+          "message", "Remove songs completed",
+          "playlistId", playlist.getId(),
+          "removedCount", removedIds.size(),
+          "removedSongIds", removedIds,
+          "duplicateInRequest", duplicates,
+          "notInPlaylist", notInPlaylist));
+
+    } catch (RuntimeException e) {
+      if ("Playlist not found".equals(e.getMessage())) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(java.util.Map.of("message", e.getMessage()));
+      }
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(java.util.Map.of("message", "Error removing songs: " + e.getMessage()));
+    } catch (Exception e) {
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(java.util.Map.of("message", "Error removing songs: " + e.getMessage()));
     }
-
-    List<String> songsToRemove = body.get("songs");
-    if (songsToRemove != null && !songsToRemove.isEmpty()) {
-      playlist.getSongs().removeAll(songsToRemove);
-      playlistRepository.save(playlist);
-    }
-
-    return ResponseEntity.ok(playlist);
   }
 
   // [DELETE] http://localhost:8081/api/common/playlist/delete/{id}
   // xoá playlist
   @DeleteMapping("/delete/{id}")
-  public ResponseEntity<?> deletePlaylist(@PathVariable String id) {
+  public ResponseEntity<?> deletePlaylist(@PathVariable("id") String id) {
     try {
       ObjectId objectId = new ObjectId(id);
       Optional<Playlist> playlistOpt = playlistRepository.findById(objectId);

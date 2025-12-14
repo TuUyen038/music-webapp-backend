@@ -15,7 +15,7 @@ public interface PlaylistRepository extends MongoRepository<Playlist, ObjectId> 
 
   boolean existsByUserIdAndName(String userId, String name);
 
-  Optional<Playlist> findByUserIdAndName(String userId, String name);
+  Optional<Playlist> findByUserIdAndPlaylistType(String userId, String playlistType);
 
   List<Playlist> findByUserIdAndIsPublicTrue(String userId);
 
