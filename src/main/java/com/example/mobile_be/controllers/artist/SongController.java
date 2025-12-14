@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.mobile_be.dto.SongRequest;
 import com.example.mobile_be.models.Song;
@@ -76,10 +77,22 @@ public class SongController {
    // }
 
    private User getCurrentUser() {
-      Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-      UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-      return userRepository.findById(userDetails.getId())
-            .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+      Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+      if (auth == null || !auth.isAuthenticated() || !(auth.getPrincipal() instanceof UserDetailsImpl)) {
+         throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+      }
+
+      // check role
+      boolean isArtist = auth.getAuthorities().stream()
+            .anyMatch(a -> "ROLE_ARTIST".equals(a.getAuthority()));
+
+      if (!isArtist) {
+         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+      }
+
+      UserDetailsImpl u = (UserDetailsImpl) auth.getPrincipal();
+      return userRepository.findById(u.getId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
    }
 
    // add song
@@ -107,8 +120,8 @@ public class SongController {
             song.setCoverImageUrl(url);
          }
          songService.saveSongFile(song, file);
-         if(lyrics != null && !lyrics.isEmpty()) {
-         songService.saveSongFile(song, lyrics);
+         if (lyrics != null && !lyrics.isEmpty()) {
+            songService.saveSongFile(song, lyrics);
 
          }
 

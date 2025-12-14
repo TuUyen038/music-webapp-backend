@@ -26,36 +26,47 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))   // ⭐ Quan trọng
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(
-                        "/api/login", "/api/register", "/api/verify-email", "/api/verify-otp", 
-                        "/api/resend-otp", "/api/password/**",
-                        "/api/artist/song/**", "/error", "/uploads/**"
-                ).permitAll()
-                .requestMatchers("/api/common/song/stream/**").permitAll()
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .requestMatchers("/api/artist/**").hasAnyRole("ARTIST", "ADMIN")
-                .requestMatchers("/api/common/**").hasAnyRole("USER", "ADMIN", "ARTIST")
-                .anyRequest().authenticated()
-            )
-            .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // ⭐ Quan trọng
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/api/login", "/api/register", "/api/verify-email", "/api/verify-otp",
+                                "/api/resend-otp", "/api/password/**",
+                                "/error", "/uploads/**")
+                        .permitAll()
+                        .requestMatchers("/api/common/song/stream/**").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/artist/**").hasAnyRole("ARTIST")
+                        .requestMatchers("/api/common/**").hasAnyRole("USER", "ADMIN", "ARTIST")
+                        .anyRequest().authenticated())
+                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint((req, res, ex) -> {
+                            res.setStatus(401);
+                            res.setContentType("application/json;charset=UTF-8");
+                            res.getWriter().write("{\"message\":\"Unauthorized\"}");
+                        })
+                        .accessDeniedHandler((req, res, ex) -> {
+                            res.setStatus(403);
+                            res.setContentType("application/json;charset=UTF-8");
+                            res.getWriter().write("{\"message\":\"Forbidden\"}");
+                        }));
 
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+
     }
-//, "/api/common/song/callback", "/api/spotify/fetch/**"
+
+    // , "/api/common/song/callback", "/api/spotify/fetch/**"
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        
-        config.addAllowedOriginPattern("*");  // ⭐ CHO PHÉP MỌI ORIGIN
+
+        config.setAllowedOrigins(List.of("http://localhost:5173"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);      // ⭐ DÙNG TOKEN, COOKIE OK
-        config.setAllowedOrigins(List.of("http://localhost:5173"));  
-        
+        config.setAllowCredentials(true);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;

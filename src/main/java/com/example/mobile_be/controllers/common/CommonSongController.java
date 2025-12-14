@@ -1,9 +1,11 @@
 package com.example.mobile_be.controllers.common;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -112,18 +114,38 @@ public class CommonSongController {
 
         return ResponseEntity.ok("saved");
     }
-@GetMapping("/rcm/{userId}")
-    public ResponseEntity<List<Song>> recommend(@PathVariable("userId") String userId) {
+
+    @GetMapping("/rcm/{userId}")
+    public ResponseEntity<?> recommend(@PathVariable("userId") String userId) {
         ObjectId objectId;
         try {
             objectId = new ObjectId(userId);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build(); // userId không hợp lệ
+            return ResponseEntity.badRequest().build();
         }
 
         List<Song> recommendedSongs = listeningHistoryService.recommendForUser(objectId);
 
-        return ResponseEntity.ok(recommendedSongs);
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (Song s : recommendedSongs) {
+
+            // Lấy tên nghệ sĩ
+            Optional<User> userOpt = userRepository.findById(new ObjectId(s.getArtistId()));
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", s.getId());
+            map.put("title", s.getTitle());
+            map.put("artistId", s.getArtistId());
+            map.put("artistName", userOpt.map(User::getFullName).orElse("Unknown"));
+            map.put("coverImageUrl", s.getCoverImageUrl());
+            map.put("duration", s.getDuration());
+            map.put("audioUrl", s.getAudioUrl());
+
+            result.add(map);
+        }
+
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/callback")
@@ -189,7 +211,7 @@ public class CommonSongController {
         ObjectId oId = new ObjectId(id);
         Optional<Song> song0 = songRepository.findById(oId);
         if (song0.isEmpty()) {
-            return ResponseEntity.status(404).body("Song not found!!");
+            return ResponseEntity.status(404).body("Song not found!");
         }
         Song song = song0.get();
         try {
@@ -234,38 +256,30 @@ public class CommonSongController {
     }
 
     @GetMapping("/popular")
-    public List<Song> getPopularSongs() {
-        return songRepository.findByOrderByViewsDesc();
+    public ResponseEntity<?> getPopularSongs() {
+
+        List<Song> songs = songRepository.findByOrderByViewsDesc();
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (Song s : songs) {
+
+            Optional<User> userOpt = userRepository.findById(new ObjectId(s.getArtistId()));
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", s.getId());
+            map.put("artistId", s.getArtistId());
+            map.put("title", s.getTitle());
+            map.put("coverImageUrl", s.getCoverImageUrl());
+            map.put("audioUrl", s.getAudioUrl());
+            map.put("duration", s.getDuration());
+            map.put("views", s.getViews());
+            map.put("artistName", userOpt.map(User::getFullName).orElse("Unknown"));
+
+            result.add(map);
+        }
+
+        return ResponseEntity.ok(result);
     }
-
-    // add song
-    // @PostMapping("/add")
-    // public ResponseEntity<?> addSong(@RequestPart("file") MultipartFile file,
-    // @RequestPart("title") String title,
-    // @RequestPart("description") String description,
-    // @RequestPart("coverImageUrl") String coverImageUrl) {
-    // User user = getCurrentUser();
-
-    // try {
-    // Song song = new Song();
-    // song.setArtistId(user.getId());
-    // if (coverImageUrl != null && coverImageUrl.trim().length() != 0) {
-    // song.setCoverImageUrl(coverImageUrl);
-    // }
-    // if (title != null && title.trim().length() != 0) {
-    // song.setTitle(title);
-    // }
-    // if (description != null && description.trim().length() != 0) {
-    // song.setDescription(description);
-    // }
-    // song.setIsPublic(false);
-    // songService.saveSongFile(song, file);
-    // return ResponseEntity.ok("Song added successfully.");
-    // } catch (Exception e) {
-    // return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-    // .body("Upload file failed: " + e.getMessage());
-    // }
-    // }
 
     // hàm lấy tất cả bài hát trong library của mình
     public Set<String> getAllSongIdsInUserLibrary(String userId) {
@@ -314,11 +328,25 @@ public class CommonSongController {
         // tra ve lyric
         String lyricPath = song.getLyricUrl();
         List<String> lyrics = new ArrayList<>();
+
         try {
-            Path path = Paths.get("." + lyricPath);
-            lyrics = Files.readAllLines(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            System.err.println("Lỗi đọc lyrics: " + e.getMessage());
+            // Case 1: lyricUrl từ Cloudinary (bắt đầu bằng http)
+            if (lyricPath != null && lyricPath.startsWith("http")) {
+                URL url = new URL(lyricPath);
+                try (InputStream is = url.openStream()) {
+                    lyrics = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))
+                            .lines().collect(Collectors.toList());
+                }
+            }
+            // Case 2: lyricUrl local (/uploads/lyrics/file.lrc)
+            else if (lyricPath != null && lyricPath.startsWith("/")) {
+                Path path = Paths.get("." + lyricPath);
+                if (Files.exists(path)) {
+                    lyrics = Files.readAllLines(path, StandardCharsets.UTF_8);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Không thể đọc lyrics: " + e.getMessage());
         }
 
         SongResponse response = new SongResponse();
@@ -371,81 +399,6 @@ public class CommonSongController {
         }
         return ResponseEntity.ok(songs);
     }
-
-    // stream file .mp3
-    // @GetMapping("/stream/{id}")
-    // public void streamSong(@PathVariable("id") ObjectId id, HttpServletRequest
-    // req, HttpServletResponse res)
-    // throws IOException {
-    // Optional<Song> test = songService.getSongById(id);
-    // if (test.isEmpty()) {
-    // res.setStatus(HttpServletResponse.SC_NOT_FOUND);
-    // res.getWriter().write("Song not found!!");
-    // return;
-    // }
-    // System.out.println(test.get().getAudioUrl());
-    // File songFile = new File(test.get().getAudioUrl());
-    // if (!songFile.exists()) {
-    // res.setStatus(HttpServletResponse.SC_NOT_FOUND);
-    // res.getWriter().write("File not found!!");
-    // return;
-    // }
-
-    // // views++
-    // songService.incrementViews(id);
-
-    // long fileLength = songFile.length();
-    // String range = req.getHeader("Range");
-
-    // long start = 0;
-    // long end = fileLength - 1;
-
-    // if (range != null && range.startsWith("bytes=")) {
-    // try {
-    // String[] ranges = range.substring(6).split("-");
-    // start = Long.parseLong(ranges[0]);
-    // if (ranges.length > 1 && !ranges[1].isEmpty()) {
-    // end = Long.parseLong(ranges[1]);
-    // }
-    // } catch (NumberFormatException e) {
-    // res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-    // return;
-    // }
-    // if (end >= fileLength) {
-    // end = fileLength - 1;
-    // }
-
-    // res.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT); // 206
-    // } else {
-    // res.setStatus(HttpServletResponse.SC_OK); // Full download
-    // }
-
-    // long contentLength = end - start + 1;
-
-    // res.setContentType("audio/mpeg");
-    // res.setHeader("Accept-Ranges", "bytes");
-    // res.setHeader("Content-Length", String.valueOf(contentLength));
-    // res.setHeader("Content-Range", String.format("bytes %d-%d/%d", start, end,
-    // fileLength));
-    // res.setHeader("Content-Disposition", "inline; filename=\"" +
-    // songFile.getName() + "\"");
-
-    // try (InputStream inputStream = new FileInputStream(songFile);
-    // OutputStream outputStream = res.getOutputStream()) {
-    // inputStream.skip(start);
-    // byte[] buffer = new byte[8192];
-    // long bytesRemaining = contentLength;
-
-    // int bytesRead;
-    // while ((bytesRead = inputStream.read(buffer)) != -1 && bytesRemaining > 0) {
-    // if (bytesRead > bytesRemaining) {
-    // bytesRead = (int) bytesRemaining;
-    // }
-    // outputStream.write(buffer, 0, bytesRead);
-    // bytesRemaining -= bytesRead;
-    // }
-    // }
-    // }
 
     @GetMapping("/stream/{id}")
     public void streamSong(
@@ -511,56 +464,6 @@ public class CommonSongController {
         }
     }
 
-    // @GetMapping("/stream/{id}")
-    // public void streamSong(@PathVariable("id") ObjectId id, HttpServletRequest
-    // req, HttpServletResponse res)
-    // throws IOException {
-
-    // Optional<Song> songOpt = songService.getSongById(id);
-    // if (songOpt.isEmpty()) {
-    // res.setStatus(HttpServletResponse.SC_NOT_FOUND);
-    // res.getWriter().write("Song not found!!");
-    // return;
-    // }
-
-    // songService.incrementViews(id); // tăng views
-
-    // String audioUrl = songOpt.get().getAudioUrl();
-    // URL url = new URL(audioUrl);
-    // HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-    // conn.setRequestMethod("GET");
-    // conn.connect();
-
-    // if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-    // res.setStatus(HttpServletResponse.SC_NOT_FOUND);
-    // res.getWriter().write("File not found on Cloudinary!!");
-    // return;
-    // }
-
-    // res.setContentType("audio/mpeg");
-    // res.setHeader("Accept-Ranges", "bytes");
-    // res.setHeader("Content-Length", String.valueOf(conn.getContentLengthLong()));
-    // res.setHeader("Content-Disposition", "inline; filename=\"" +
-    // Paths.get(url.getPath()).getFileName() + "\"");
-
-    // try (InputStream inputStream = conn.getInputStream();
-    // OutputStream outputStream = res.getOutputStream()) {
-
-    // byte[] buffer = new byte[8192];
-    // int bytesRead;
-    // while ((bytesRead = inputStream.read(buffer)) != -1) {
-    // outputStream.write(buffer, 0, bytesRead);
-    // }
-    // }
-    // }
-
-    // @GetMapping("/new-release")
-    // public ResponseEntity<?> getNewReleaseSongs() {
-    // List<Song> newSongs = songService.getNewReleaseSongs();
-    // return ResponseEntity.ok(newSongs);
-    // }
-
-    // response trả về song dựa trên title của song hoặc tên của artist
     @GetMapping("/search")
     public ResponseEntity<?> searchSongsByKeyword(@RequestParam("keyword") String keyword) {
         if (keyword == null || keyword.trim().isEmpty()) {
@@ -749,12 +652,4 @@ public class CommonSongController {
         return ResponseEntity.ok(songs);
     }
 
-    private String extractS3Key(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getPath().substring(1);
-        } catch (Exception e) {
-            throw new RuntimeException("Invalid S3 URL");
-        }
-    }
 }

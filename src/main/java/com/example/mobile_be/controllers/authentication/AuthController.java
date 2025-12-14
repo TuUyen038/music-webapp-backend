@@ -222,11 +222,12 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
             if (request.getEmail() == null || request.getPassword() == null) {
-    return ResponseEntity.badRequest().body(Map.of("message", "Email and password are required"));
-}
+                return ResponseEntity.badRequest().body(Map.of("message", "Email and password are required"));
+            }
 
             User user = userService.authenticate(request.getEmail(), request.getPassword());
             String token = jwtUtil.generateToken(new UserDetailsImpl(user));
+            System.out.println(user.getEmail());
             return ResponseEntity.ok(new AuthResponse(token, user.getRole()));
         } catch (UsernameNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found"));
@@ -240,7 +241,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Incorrect login information"));
         } catch (Exception e) {
-            e.printStackTrace(); 
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", "INTERNAL SERVER ERROR"));
         }

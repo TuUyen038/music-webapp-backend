@@ -25,8 +25,6 @@ public class Song extends BaseDocument {
     private ObjectId id;
     private String artistId;
     private String description;
-    // private String artistName; //for spotify
-    // private List<String> genres;
  
     @TextIndexed 
     private String title;
@@ -41,12 +39,6 @@ public class Song extends BaseDocument {
     private Long views = 0l;
     private Date lastPlayedAt;
 
-    // private Double tempo;          // BPM
-    // private Double energy;         // 0-1
-    // private Double danceability;   // 0-1
-    // private Double valence;        // 0-1
-    // private List<String> tags;     // mood, situation, playlist tags
-    // private String source;
     public String getId() {
         return id != null ? id.toHexString() : null;
     }

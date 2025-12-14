@@ -74,6 +74,31 @@ public class CommonPlaylistController {
     return userRepository.findById(userDetails.getId())
         .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
   }
+  
+
+  @GetMapping("/favorite/songs/{songId}/exists")
+  public ResponseEntity<?> checkSongInFavorite(@PathVariable("songId") String songId) {
+    User currentUser = getCurrentUser();
+    String userId = currentUser.getId();
+
+    // Playlist targetPlaylist;
+
+    // if (playlistId != null && !playlistId.trim().isEmpty()) {
+    //   // TH1: Người dùng chỉ định playlist
+    //   targetPlaylist = playlistRepository.findById(new ObjectId(playlistId))
+    //       .orElseThrow(() -> new RuntimeException("Playlist not found"));
+    //   if (!targetPlaylist.getUserId().equals(userId)) {
+    //     return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied");
+    //   }
+    // }
+    boolean isFavorite = playlistRepository.existsByUserIdAndNameAndSongsContaining(userId, "Favorites", songId);
+
+
+    return ResponseEntity.ok(Map.of(
+        "songId", songId,
+        "inFavorite", isFavorite
+    ));
+  }
 
   // getNewReleasePlaylists
   @GetMapping("/new-releases")
