@@ -392,7 +392,7 @@ public class CommonSongController {
 
     // get song by artistId
     @GetMapping("/artist/{artistId}")
-    public ResponseEntity<?> getSongByArtistId(@PathVariable String artistId) {
+    public ResponseEntity<?> getSongByArtistId(@PathVariable("artistId") String artistId) {
         List<Song> songs = songRepository.findByArtistIdAndIsPublicTrue(artistId);
         if (songs.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No result");
