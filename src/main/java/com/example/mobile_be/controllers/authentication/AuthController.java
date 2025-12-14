@@ -111,8 +111,8 @@ public class AuthController {
                 favorites.setDescription("A list of your favorite songs");
                 favorites.setUserId(user.getId());
                 favorites.setIsPublic(false);
-                favorites.setThumbnailUrl("/uploads/playlists/default-img.jpg");
-                favorites.setPlaylistType("favourites");
+                favorites.setThumbnailUrl("https://res.cloudinary.com/denhj5ubh/image/upload/v1765705079/playlist_uwjlfz.png");
+                favorites.setPlaylistType("favorites");
 
                 playlistRepository.save(favorites);
                 defaultPlaylistIds.add(favorites.getId()); // Lưu ID vào danh sách
