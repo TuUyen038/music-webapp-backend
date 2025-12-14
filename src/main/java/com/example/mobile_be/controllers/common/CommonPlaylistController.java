@@ -484,6 +484,106 @@ public class CommonPlaylistController {
     return ResponseEntity.ok("Songs added successfully");
   }
 
+  @PostMapping("/favorites/songs/{songId}")
+public ResponseEntity<?> addSongToFavorites(@PathVariable("songId") String songId) {
+  try {
+    if (!ObjectId.isValid(songId)) {
+      return ResponseEntity.badRequest().body(java.util.Map.of("message", "Invalid songId"));
+    }
+
+    // BR: If (!existsSong(songId)) return "No songs found"
+    boolean exists = songRepository.existsById(new ObjectId(songId));
+    if (!exists) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND)
+          .body(java.util.Map.of("message", "No songs found"));
+    }
+
+    String userId = getCurrentUser().getId();
+
+    // Get or create Favorites playlist
+    Playlist fav = playlistRepository.findByUserIdAndPlaylistType(userId, "favorites")
+        .orElseGet(() -> {
+          Playlist p = new Playlist();
+          p.setName("Favorites");
+          p.setUserId(userId);
+          p.setIsPublic(false);
+          p.setPlaylistType("favorites");
+          p.setThumbnailUrl("https://res.cloudinary.com/denhj5ubh/image/upload/v1765705079/playlist_uwjlfz.png");
+          p.setDescription("A list of your favorite songs");
+          p.setSongs(new ArrayList<>());
+          return playlistRepository.save(p);
+        });
+
+    if (fav.getSongs() == null) fav.setSongs(new ArrayList<>());
+
+    // BR: Else if (isFavorite(userId, songId)) return "Song already in Favorites"
+    if (fav.getSongs().contains(songId)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body(java.util.Map.of("message", "Song already in Favorites"));
+    }
+
+    fav.getSongs().add(songId);
+    playlistRepository.save(fav);
+
+    return ResponseEntity.ok(java.util.Map.of(
+        "message", "Added to Favorites",
+        "playlistId", fav.getId()
+    ));
+
+  } catch (Exception e) {
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(java.util.Map.of("message", "Error adding to favorites: " + e.getMessage()));
+  }
+}
+
+@DeleteMapping("/favorites/songs/{songId}")
+public ResponseEntity<?> removeSongFromFavorites(@PathVariable("songId") String songId) {
+  try {
+    if (!ObjectId.isValid(songId)) {
+      return ResponseEntity.badRequest().body(java.util.Map.of("message", "Invalid songId"));
+    }
+
+    // BR: If (!existsSong(songId)) return "No songs found"
+    boolean exists = songRepository.existsById(new ObjectId(songId));
+    if (!exists) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND)
+          .body(java.util.Map.of("message", "No songs found"));
+    }
+
+    String userId = getCurrentUser().getId();
+
+    Playlist fav = playlistRepository.findByUserIdAndPlaylistType(userId, "favorites")
+        .orElseThrow(() -> new RuntimeException("Favorite playlist not found"));
+
+    if (fav.getSongs() == null) fav.setSongs(new ArrayList<>());
+
+    // BR: Else if (!isFavorite(userId, songId)) return "Song is not in Favorites"
+    if (!fav.getSongs().contains(songId)) {
+      return ResponseEntity.status(HttpStatus.CONFLICT)
+          .body(java.util.Map.of("message", "Song is not in Favorites"));
+    }
+
+    fav.getSongs().removeIf(id -> songId.equals(id));
+    playlistRepository.save(fav);
+
+    return ResponseEntity.ok(java.util.Map.of(
+        "message", "Removed from Favorites",
+        "playlistId", fav.getId()
+    ));
+
+  } catch (RuntimeException e) {
+    if ("Favorite playlist not found".equals(e.getMessage())) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND)
+          .body(java.util.Map.of("message", e.getMessage()));
+    }
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(java.util.Map.of("message", "Error removing from favorites: " + e.getMessage()));
+  } catch (Exception e) {
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(java.util.Map.of("message", "Error removing from favorites: " + e.getMessage()));
+  }
+}
+
   // [PATCH] http://localhost:8081/api/common/playlist/{playlistId}/removeSong
   // xoa 1 bai hat khoi playlist
   @PatchMapping("/{playlistId}/removeSongs")
