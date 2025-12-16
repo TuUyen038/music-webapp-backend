@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -88,16 +89,25 @@ public class UserService implements UserDetailsService {
     }
 
     public User authenticate(String email, String rawPassword) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found in login"));
-        if (!user.getIsVerified()) {
-            throw new BadCredentialsException("Unverified");
-        }
-        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
-            throw new BadCredentialsException("Wrong password");
-        }
-        return user;
+
+    User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new BadCredentialsException("Invalid login")); 
+            // không throw UsernameNotFoundException nữa để tránh lộ "user not found"
+
+    // 1) Check password trước
+    if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+        throw new BadCredentialsException("Invalid login"); 
+        // không dùng "Wrong password"
     }
+
+    // 2) Password đúng rồi mới check verified
+    if (!Boolean.TRUE.equals(user.getIsVerified())) {
+        throw new DisabledException("Unverified account"); 
+        // hoặc custom exception; DisabledException là hợp lý cho account chưa active/verified
+    }
+
+    return user;
+}
 
     // Gửi OTP reset password
     public boolean requestPasswordReset(String email) {

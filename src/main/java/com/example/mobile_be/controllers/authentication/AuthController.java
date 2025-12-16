@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -111,7 +112,8 @@ public class AuthController {
                 favorites.setDescription("A list of your favorite songs");
                 favorites.setUserId(user.getId());
                 favorites.setIsPublic(false);
-                favorites.setThumbnailUrl("https://res.cloudinary.com/denhj5ubh/image/upload/v1765705079/playlist_uwjlfz.png");
+                favorites.setThumbnailUrl(
+                        "https://res.cloudinary.com/denhj5ubh/image/upload/v1765705079/playlist_uwjlfz.png");
                 favorites.setPlaylistType("favorites");
 
                 playlistRepository.save(favorites);
@@ -221,30 +223,32 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
-            if (request.getEmail() == null || request.getPassword() == null) {
-                return ResponseEntity.badRequest().body(Map.of("message", "Email and password are required"));
+            if (request.getEmail() == null || request.getEmail().isBlank()
+                    || request.getPassword() == null || request.getPassword().isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message", "Email and password are required"));
             }
 
+            // authenticate: check password inside
             User user = userService.authenticate(request.getEmail(), request.getPassword());
+
+            // ONLY after password is correct, check verification
+            if (!user.getIsVerified()) { // đổi theo field của bạn: getIsVerified(), isEmailVerified(), ...
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("message", "Unverified account"));
+            }
+
             String token = jwtUtil.generateToken(new UserDetailsImpl(user));
-            System.out.println(user.getEmail());
             return ResponseEntity.ok(new AuthResponse(token, user.getRole()));
-        } catch (UsernameNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found"));
+
+        } catch (DisabledException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Unverified account"));
         } catch (BadCredentialsException e) {
-            if ("Wrong password".equals(e.getMessage())) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Wrong password"));
-            }
-            if ("Unverified".equals(e.getMessage())) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unverified account"));
-            }
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Incorrect login information"));
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("message", "INTERNAL SERVER ERROR"));
+                    .body(Map.of("message", "Invalid email or password"));
         }
+
     }
 
     @PostMapping("/logout")

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
@@ -464,14 +465,37 @@ public class CommonSongController {
         }
     }
 
+    private String normalizeText(String input) {
+    String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);
+    return normalized
+            .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+            .toLowerCase()
+            .trim();
+}
+
     @GetMapping("/search")
-    public ResponseEntity<?> searchSongsByKeyword(@RequestParam("keyword") String keyword) {
-        if (keyword == null || keyword.trim().isEmpty()) {
-            return ResponseEntity.ok(List.of());
-        }
+    public ResponseEntity<?> searchSongsByKeyword(
+        @RequestParam("keyword") String keyword) {
+
+            if (keyword == null) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            keyword = keyword.trim(); 
+
+            if (keyword.isEmpty()) {
+                return ResponseEntity.ok(List.of());
+            }
         // tim song theo title(k check song public hay k vi de thay duoc song nay ben fe
         // da xu ly ispublic roi?)
-        List<Song> songsByTitle = songRepository.findByTitleContainingIgnoreCase(keyword);
+        String normalizedKeyword = normalizeText(keyword);
+        List<Song> songsByTitle = songRepository.findAll()
+        .stream()
+        .filter(song ->
+            normalizeText(song.getTitle())
+                .contains(normalizedKeyword)
+        )
+        .collect(Collectors.toList());
         // tim artist theo fullname va role
         List<User> artists = userRepository.findByRoleAndFullNameContainingIgnoreCase("ROLE_ARTIST", keyword);
 
@@ -496,22 +520,31 @@ public class CommonSongController {
             }
         }
 
-        List<SongResponse> responses = matchedSongs.stream().map(song -> {
-            SongResponse res = new SongResponse();
-            res.setId(song.getId());
-            res.setTitle(song.getTitle());
-            res.setArtistId(song.getArtistId());
-            res.setAudioUrl(song.getAudioUrl());
-            res.setDuration(song.getDuration());
-            res.setViews(song.getViews());
-            res.setDescription(song.getDescription());
-            res.setCoverImageUrl(song.getCoverImageUrl());
-            res.setPlaylistIds(songToPlaylistMap.getOrDefault(song.getId(), List.of()));
-            return res;
-        }).collect(Collectors.toList());
+       List<SongResponse> responses = matchedSongs.stream().map(song -> {
+
+        Optional<User> artistOpt =
+            userRepository.findById(new ObjectId(song.getArtistId()));
+
+        SongResponse res = new SongResponse();
+        res.setId(song.getId());
+        res.setTitle(song.getTitle());
+        res.setArtistId(song.getArtistId());
+        res.setArtistName(
+            artistOpt.map(User::getFullName).orElse("Unknown Artist")
+        );
+
+        res.setAudioUrl(song.getAudioUrl());
+        res.setDuration(song.getDuration());
+        res.setViews(song.getViews());
+        res.setDescription(song.getDescription());
+        res.setCoverImageUrl(song.getCoverImageUrl());
+        res.setPlaylistIds(songToPlaylistMap.getOrDefault(song.getId(), List.of()));
+        return res;
+    }).collect(Collectors.toList());
 
         return ResponseEntity.ok(responses);
     }
+
 
     @GetMapping("/search/multi")
     public ResponseEntity<?> searchAll(@RequestParam("keyword") String keyword) {
