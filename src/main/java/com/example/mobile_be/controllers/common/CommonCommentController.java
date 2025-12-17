@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/common/comment")
 
-// Comment se duoc tao moi, xoa chu khong co sua
 
 public class CommonCommentController {
     @Autowired
