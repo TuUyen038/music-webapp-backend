@@ -39,69 +39,45 @@ public class ListeningHistoryService {
 
     public List<Song> recommendForUser(ObjectId userId) {
 
+        // 1. Lấy top bài hát user nghe nhiều nhất
         List<Map<String, Object>> topSongs = repo.findTopSongs(userId);
 
+        // Nếu user chưa nghe gì → gợi ý random
         if (topSongs == null || topSongs.isEmpty()) {
             return songService.getRandomSongs(10);
         }
 
         Set<String> artists = new HashSet<>();
-        Set<String> genres = new HashSet<>();
+        Set<String> genres  = new HashSet<>();
 
-        // NEW: map đếm lượt nghe theo artist
-        Map<String, Long> artistPlayCount = new HashMap<>();
-
+        // 2. Lấy thông tin bài hát top để gom genre/artist
         for (Map<String, Object> row : topSongs) {
+
             String songId = (String) row.get("_id");
-            long count = ((Number) row.get("count")).longValue(); // số lần nghe bài này
 
             songService.getSongById(new ObjectId(songId)).ifPresent(song -> {
-                if (song.getArtistId() != null) {
-                    artists.add(song.getArtistId());
-
-                    // cộng dồn lượt nghe vào artist đó
-                    artistPlayCount.merge(song.getArtistId(), count, Long::sum);
-                }
-                if (song.getGenreId() != null) {
-                    genres.addAll(song.getGenreId());
-                }
+                if (song.getArtistId() != null) artists.add(song.getArtistId());
+                if (song.getGenreId() != null)  genres.addAll(song.getGenreId());
             });
         }
 
+        // 3. Nếu không tìm được thông tin → random
         if (artists.isEmpty() && genres.isEmpty()) {
             return songService.getRandomSongs(10);
         }
 
+        // 4. Gợi ý bài hát cùng artist/genre
         List<Song> recommendList = songService.findByArtistOrGenre(artists, genres);
 
+        // Nếu vẫn rỗng → random
         if (recommendList.isEmpty()) {
             return songService.getRandomSongs(10);
         }
-        // Giả sử Song có field: private Instant createdAt; hoặc Date, LocalDateTime...
-        // Điều chỉnh lại cho đúng kiểu dữ liệu của bạn nhé
 
-        recommendList.sort((s1, s2) -> {
-            long score1 = artistPlayCount.getOrDefault(s1.getArtistId(), 0L);
-            long score2 = artistPlayCount.getOrDefault(s2.getArtistId(), 0L);
-
-            // 1. So sánh theo lượt nghe (artistScore) – ưu tiên nhiều nghe hơn
-            int cmp = Long.compare(score2, score1); // score2 > score1 -> s2 đứng trước
-
-            // 2. Nếu chênh lệch lượt nghe KHÔNG NHIỀU (ví dụ <= 5 lần)
-            // hoặc bằng nhau, thì ưu tiên bài MỚI HƠN
-            long diff = Math.abs(score1 - score2);
-            if ((cmp == 0 || diff <= 50) // "thêm xíu ưu tiên" cho bài mới
-                    && s1.getCreatedAt() != null
-                    && s2.getCreatedAt() != null) {
-
-                // Mới hơn đứng trước
-                cmp = s2.getCreatedAt().compareTo(s1.getCreatedAt());
-            }
-
-            return cmp;
-        });
         return recommendList;
     }
+
+
 
     public List<ListeningHistory> getHistory(ObjectId userId) {
         return repo.findByUserId(userId); // lấy lịch sử nghe của user
